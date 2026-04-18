@@ -250,6 +250,7 @@ Default: `false`
 Whether or not to `preventDefault()` when events are fired. This should be left `true` unless you really know what you are doing.
 
 See `preventDefaultException` in the [Advanced options](#advanced-options) for more control over the preventDefault behavior.
+If you need nested widgets such as maps to keep their own drag, click and wheel handling, use `preventScrollException`.
 
 Default: `true`
 
@@ -680,7 +681,33 @@ This is a pretty powerful option, if you don't want to `preventDefault()` on all
 preventDefaultException: { className: /(^|\s)formfield(\s|$)/ }
 ```
 
+This only affects the `preventDefault()` call on the original event target. It does not stop iScroll from starting a scroll when the gesture begins inside that element.
+
 Default: `{ tagName: /^(INPUT|TEXTAREA|BUTTON|SELECT)$/ }`.
+
+### <small>options.</small>preventScrollException
+
+Use this option when you have nested interactive widgets that must keep their own drag, click or wheel handling. Typical examples are maps, code editors, canvases and draggable dashboards.
+
+iScroll matches the event target and its ancestors up to the wrapper, and if one of them matches the exception it lets the browser/widget handle the interaction instead of starting an iScroll gesture.
+
+```js
+preventScrollException: { className: /(^|\s)js-map-shell(\s|$)/ }
+```
+
+Use a class that you own on the widget wrapper. For example:
+
+```js
+var myScroll = new IScroll('#wrapper', {
+    click: true,
+    mouseWheel: true,
+    preventScrollException: {
+        className: /(^|\s)js-map-shell(\s|$)/
+    }
+});
+```
+
+This is the recommended way to embed Google Maps or similar widgets inside an iScroll container. Have a look at the [nested interactive demo](demos/nested-interactive/) for a working mock map example.
 
 ### <small>options.</small>resizePolling
 

@@ -5,7 +5,9 @@
 			case 'pointerdown':
 			case 'MSPointerDown':
 			case 'mousedown':
-				this._start(e);
+				if ( !this._start(e) ) {
+					return;
+				}
 
 				if ( this.options.zoom && e.touches && e.touches.length > 1 ) {
 					this._zoomStart(e);
@@ -48,6 +50,9 @@
 			case 'wheel':
 			case 'DOMMouseScroll':
 			case 'mousewheel':
+				if ( this._isPreventScrollTarget(e.target) ) {
+					return;
+				}
 				if ( this.options.wheelAction == 'zoom' ) {
 					this._wheelZoom(e);
 					return;	

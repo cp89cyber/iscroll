@@ -2,6 +2,14 @@
 
 ---
 
+##  Unreleased
+
+### Changes
+* Added `preventScrollException` to let nested interactive widgets such as embedded maps opt out of iScroll drag, click and wheel capture.
+* Restored wrapper `touch-action` when pointer handling is disabled so reinitializing iScroll does not leave stale gesture blocking behind.
+
+---
+
 ##  Version 5.2.0 - 2016.04.05
 
 ### Fixes

@@ -177,6 +177,34 @@ var utils = (function () {
 		return false;
 	};
 
+	me.hasParentException = function (el, exceptions, stopEl) {
+		while ( el ) {
+			if ( el.nodeType == 1 ) {
+				for ( var i in exceptions ) {
+					var value = el[i];
+
+					if ( value && typeof value == 'object' && 'baseVal' in value ) {
+						value = value.baseVal;
+					}
+
+					value = value === undefined || value === null ? '' : value;
+
+					if ( exceptions[i].test(value) ) {
+						return true;
+					}
+				}
+			}
+
+			if ( el == stopEl ) {
+				break;
+			}
+
+			el = el.parentNode;
+		}
+
+		return false;
+	};
+
 	me.extend(me.eventType = {}, {
 		touchstart: 1,
 		touchmove: 1,

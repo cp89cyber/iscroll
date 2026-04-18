@@ -1,4 +1,4 @@
-/*! iScroll v5.2.0-snapshot ~ (c) 2008-2017 Matteo Spinelli ~ http://cubiq.org/license */
+/*! iScroll v5.2.0-snapshot ~ (c) 2008-2026 Matteo Spinelli ~ http://cubiq.org/license */
 (function (window, document, Math) {
 var rAF = window.requestAnimationFrame	||
 	window.webkitRequestAnimationFrame	||
@@ -179,6 +179,34 @@ var utils = (function () {
 		return false;
 	};
 
+	me.hasParentException = function (el, exceptions, stopEl) {
+		while ( el ) {
+			if ( el.nodeType == 1 ) {
+				for ( var i in exceptions ) {
+					var value = el[i];
+
+					if ( value && typeof value == 'object' && 'baseVal' in value ) {
+						value = value.baseVal;
+					}
+
+					value = value === undefined || value === null ? '' : value;
+
+					if ( exceptions[i].test(value) ) {
+						return true;
+					}
+				}
+			}
+
+			if ( el == stopEl ) {
+				break;
+			}
+
+			el = el.parentNode;
+		}
+
+		return false;
+	};
+
 	me.extend(me.eventType = {}, {
 		touchstart: 1,
 		touchmove: 1,
@@ -314,6 +342,7 @@ var utils = (function () {
 
 	return me;
 })();
+
 function IScroll (el, options) {
 	this.wrapper = typeof el == 'string' ? document.querySelector(el) : el;
 	this.scroller = this.wrapper.children[0];
@@ -346,6 +375,7 @@ function IScroll (el, options) {
 
 		preventDefault: true,
 		preventDefaultException: { tagName: /^(INPUT|TEXTAREA|BUTTON|SELECT)$/ },
+		preventScrollException: false,
 
 		HWCompositing: true,
 		useTransition: true,
@@ -382,6 +412,15 @@ function IScroll (el, options) {
 		this.options.tap = 'tap';
 	}
 
+	this._usesPreventScrollTouchFallback = false;
+
+	if ( this.options.preventScrollException && utils.hasPointer && utils.hasTouch ) {
+		this.options.disablePointer = true;
+		this.options.disableTouch = false;
+		this.options.disableMouse = false;
+		this._usesPreventScrollTouchFallback = true;
+	}
+
 	// https://github.com/cubiq/iscroll/issues/1029
 	if (!this.options.useTransition && !this.options.useTransform) {
 		if(!(/relative|absolute/i).test(this.scrollerStyle.position)) {
@@ -403,6 +442,9 @@ function IScroll (el, options) {
 	this.directionX = 0;
 	this.directionY = 0;
 	this._events = {};
+	this._ignoreMouseUntil = 0;
+	this._wrapperTouchAction = '';
+	this._wrapperTouchActionSaved = false;
 
 	this.scale = Math.min(Math.max(this.options.startZoom, this.options.zoomMin), this.options.zoomMax);
 
@@ -449,6 +491,7 @@ IScroll.prototype = {
 		this._initEvents(true);
 		clearTimeout(this.resizeTimeout);
  		this.resizeTimeout = null;
+		this._restoreWrapperTouchAction();
 		this._execEvent('destroy');
 	},
 
@@ -461,6 +504,46 @@ IScroll.prototype = {
 		if ( !this.resetPosition(this.options.bounceTime) ) {
 			this.isInTransition = false;
 			this._execEvent('scrollEnd');
+		}
+	},
+
+	_isPreventScrollTarget: function (target) {
+		return !!( this.options.preventScrollException && target && utils.hasParentException(target, this.options.preventScrollException, this.wrapper) );
+	},
+
+	_saveWrapperTouchAction: function () {
+		if ( !utils.style.touchAction || this._wrapperTouchActionSaved ) {
+			return;
+		}
+
+		this._wrapperTouchAction = this.wrapper.style[utils.style.touchAction];
+		this._wrapperTouchActionSaved = true;
+	},
+
+	_restoreWrapperTouchAction: function () {
+		if ( !utils.style.touchAction || !this._wrapperTouchActionSaved ) {
+			return;
+		}
+
+		this.wrapper.style[utils.style.touchAction] = this._wrapperTouchAction;
+	},
+
+	_refreshTouchAction: function () {
+		if ( !utils.style.touchAction ) {
+			return;
+		}
+
+		if ( utils.hasPointer && !this.options.disablePointer ) {
+			this._saveWrapperTouchAction();
+			this.wrapper.style[utils.style.touchAction] = utils.getTouchAction(this.options.eventPassthrough, true);
+
+			// case. not support 'pinch-zoom'
+			// https://github.com/cubiq/iscroll/issues/1118#issuecomment-270057583
+			if ( !this.wrapper.style[utils.style.touchAction] ) {
+				this.wrapper.style[utils.style.touchAction] = utils.getTouchAction(this.options.eventPassthrough, false);
+			}
+		} else {
+			this._restoreWrapperTouchAction();
 		}
 	},
 
@@ -479,12 +562,20 @@ IScroll.prototype = {
 	      button = e.button;
 	    }
 			if ( button !== 0 ) {
-				return;
+				return false;
 			}
 		}
 
 		if ( !this.enabled || (this.initiated && utils.eventType[e.type] !== this.initiated) ) {
-			return;
+			return false;
+		}
+
+		if ( this._usesPreventScrollTouchFallback && e.type == 'mousedown' && utils.getTime() < this._ignoreMouseUntil ) {
+			return false;
+		}
+
+		if ( this._isPreventScrollTarget(e.target) ) {
+			return false;
 		}
 
 		if ( this.options.preventDefault && !utils.isBadAndroid && !utils.preventDefaultException(e.target, this.options.preventDefaultException) ) {
@@ -523,6 +614,7 @@ IScroll.prototype = {
 		this.pointY    = point.pageY;
 
 		this._execEvent('beforeScrollStart');
+		return true;
 	},
 
 	_move: function (e) {
@@ -634,7 +726,8 @@ IScroll.prototype = {
 		var point = e.changedTouches ? e.changedTouches[0] : e,
 			momentumX,
 			momentumY,
-			duration = utils.getTime() - this.startTime,
+			timestamp = utils.getTime(),
+			duration = timestamp - this.startTime,
 			newX = Math.round(this.x),
 			newY = Math.round(this.y),
 			distanceX = Math.abs(newX - this.startX),
@@ -644,7 +737,11 @@ IScroll.prototype = {
 
 		this.isInTransition = 0;
 		this.initiated = 0;
-		this.endTime = utils.getTime();
+		this.endTime = timestamp;
+
+		if ( this._usesPreventScrollTouchFallback && (e.type == 'touchend' || e.type == 'touchcancel') ) {
+			this._ignoreMouseUntil = timestamp + 400;
+		}
 
 		// reset if we are outside of the boundaries
 		if ( this.resetPosition(this.options.bounceTime) ) {
@@ -790,17 +887,8 @@ IScroll.prototype = {
 		this.endTime = 0;
 		this.directionX = 0;
 		this.directionY = 0;
-		
-		if(utils.hasPointer && !this.options.disablePointer) {
-			// The wrapper should have `touchAction` property for using pointerEvent.
-			this.wrapper.style[utils.style.touchAction] = utils.getTouchAction(this.options.eventPassthrough, true);
 
-			// case. not support 'pinch-zoom'
-			// https://github.com/cubiq/iscroll/issues/1118#issuecomment-270057583
-			if (!this.wrapper.style[utils.style.touchAction]) {
-				this.wrapper.style[utils.style.touchAction] = utils.getTouchAction(this.options.eventPassthrough, false);
-			}
-		}
+		this._refreshTouchAction();
 		this.wrapperOffset = utils.offset(this.wrapper);
 
 		this._execEvent('refresh');
@@ -1035,6 +1123,7 @@ IScroll.prototype = {
 
 		return { x: x, y: y };
 	},
+
 	_initIndicators: function () {
 		var interactive = this.options.interactiveScrollbars,
 			customStyle = typeof this.options.scrollbars != 'string',
@@ -1835,7 +1924,9 @@ IScroll.prototype = {
 			case 'pointerdown':
 			case 'MSPointerDown':
 			case 'mousedown':
-				this._start(e);
+				if ( !this._start(e) ) {
+					return;
+				}
 
 				if ( this.options.zoom && e.touches && e.touches.length > 1 ) {
 					this._zoomStart(e);
@@ -1878,6 +1969,9 @@ IScroll.prototype = {
 			case 'wheel':
 			case 'DOMMouseScroll':
 			case 'mousewheel':
+				if ( this._isPreventScrollTarget(e.target) ) {
+					return;
+				}
 				if ( this.options.wheelAction == 'zoom' ) {
 					this._wheelZoom(e);
 					return;	
@@ -1891,6 +1985,7 @@ IScroll.prototype = {
 	}
 
 };
+
 function createDefaultScrollbar (direction, interactive, type) {
 	var scrollbar = document.createElement('div'),
 		indicator = document.createElement('div');

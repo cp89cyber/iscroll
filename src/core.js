@@ -22,6 +22,7 @@ function IScroll (el, options) {
 
 		preventDefault: true,
 		preventDefaultException: { tagName: /^(INPUT|TEXTAREA|BUTTON|SELECT)$/ },
+		preventScrollException: false,
 
 		HWCompositing: true,
 		useTransition: true,
@@ -58,6 +59,15 @@ function IScroll (el, options) {
 		this.options.tap = 'tap';
 	}
 
+	this._usesPreventScrollTouchFallback = false;
+
+	if ( this.options.preventScrollException && utils.hasPointer && utils.hasTouch ) {
+		this.options.disablePointer = true;
+		this.options.disableTouch = false;
+		this.options.disableMouse = false;
+		this._usesPreventScrollTouchFallback = true;
+	}
+
 	// https://github.com/cubiq/iscroll/issues/1029
 	if (!this.options.useTransition && !this.options.useTransform) {
 		if(!(/relative|absolute/i).test(this.scrollerStyle.position)) {
@@ -73,6 +83,9 @@ function IScroll (el, options) {
 	this.directionX = 0;
 	this.directionY = 0;
 	this._events = {};
+	this._ignoreMouseUntil = 0;
+	this._wrapperTouchAction = '';
+	this._wrapperTouchActionSaved = false;
 
 // INSERT POINT: DEFAULTS
 
@@ -97,6 +110,7 @@ IScroll.prototype = {
 		this._initEvents(true);
 		clearTimeout(this.resizeTimeout);
  		this.resizeTimeout = null;
+		this._restoreWrapperTouchAction();
 		this._execEvent('destroy');
 	},
 
@@ -109,6 +123,46 @@ IScroll.prototype = {
 		if ( !this.resetPosition(this.options.bounceTime) ) {
 			this.isInTransition = false;
 			this._execEvent('scrollEnd');
+		}
+	},
+
+	_isPreventScrollTarget: function (target) {
+		return !!( this.options.preventScrollException && target && utils.hasParentException(target, this.options.preventScrollException, this.wrapper) );
+	},
+
+	_saveWrapperTouchAction: function () {
+		if ( !utils.style.touchAction || this._wrapperTouchActionSaved ) {
+			return;
+		}
+
+		this._wrapperTouchAction = this.wrapper.style[utils.style.touchAction];
+		this._wrapperTouchActionSaved = true;
+	},
+
+	_restoreWrapperTouchAction: function () {
+		if ( !utils.style.touchAction || !this._wrapperTouchActionSaved ) {
+			return;
+		}
+
+		this.wrapper.style[utils.style.touchAction] = this._wrapperTouchAction;
+	},
+
+	_refreshTouchAction: function () {
+		if ( !utils.style.touchAction ) {
+			return;
+		}
+
+		if ( utils.hasPointer && !this.options.disablePointer ) {
+			this._saveWrapperTouchAction();
+			this.wrapper.style[utils.style.touchAction] = utils.getTouchAction(this.options.eventPassthrough, true);
+
+			// case. not support 'pinch-zoom'
+			// https://github.com/cubiq/iscroll/issues/1118#issuecomment-270057583
+			if ( !this.wrapper.style[utils.style.touchAction] ) {
+				this.wrapper.style[utils.style.touchAction] = utils.getTouchAction(this.options.eventPassthrough, false);
+			}
+		} else {
+			this._restoreWrapperTouchAction();
 		}
 	},
 
@@ -127,12 +181,20 @@ IScroll.prototype = {
 	      button = e.button;
 	    }
 			if ( button !== 0 ) {
-				return;
+				return false;
 			}
 		}
 
 		if ( !this.enabled || (this.initiated && utils.eventType[e.type] !== this.initiated) ) {
-			return;
+			return false;
+		}
+
+		if ( this._usesPreventScrollTouchFallback && e.type == 'mousedown' && utils.getTime() < this._ignoreMouseUntil ) {
+			return false;
+		}
+
+		if ( this._isPreventScrollTarget(e.target) ) {
+			return false;
 		}
 
 		if ( this.options.preventDefault && !utils.isBadAndroid && !utils.preventDefaultException(e.target, this.options.preventDefaultException) ) {
@@ -171,6 +233,7 @@ IScroll.prototype = {
 		this.pointY    = point.pageY;
 
 		this._execEvent('beforeScrollStart');
+		return true;
 	},
 
 	_move: function (e) {
@@ -282,7 +345,8 @@ IScroll.prototype = {
 		var point = e.changedTouches ? e.changedTouches[0] : e,
 			momentumX,
 			momentumY,
-			duration = utils.getTime() - this.startTime,
+			timestamp = utils.getTime(),
+			duration = timestamp - this.startTime,
 			newX = Math.round(this.x),
 			newY = Math.round(this.y),
 			distanceX = Math.abs(newX - this.startX),
@@ -292,7 +356,11 @@ IScroll.prototype = {
 
 		this.isInTransition = 0;
 		this.initiated = 0;
-		this.endTime = utils.getTime();
+		this.endTime = timestamp;
+
+		if ( this._usesPreventScrollTouchFallback && (e.type == 'touchend' || e.type == 'touchcancel') ) {
+			this._ignoreMouseUntil = timestamp + 400;
+		}
 
 		// reset if we are outside of the boundaries
 		if ( this.resetPosition(this.options.bounceTime) ) {
@@ -423,17 +491,8 @@ IScroll.prototype = {
 		this.endTime = 0;
 		this.directionX = 0;
 		this.directionY = 0;
-		
-		if(utils.hasPointer && !this.options.disablePointer) {
-			// The wrapper should have `touchAction` property for using pointerEvent.
-			this.wrapper.style[utils.style.touchAction] = utils.getTouchAction(this.options.eventPassthrough, true);
 
-			// case. not support 'pinch-zoom'
-			// https://github.com/cubiq/iscroll/issues/1118#issuecomment-270057583
-			if (!this.wrapper.style[utils.style.touchAction]) {
-				this.wrapper.style[utils.style.touchAction] = utils.getTouchAction(this.options.eventPassthrough, false);
-			}
-		}
+		this._refreshTouchAction();
 		this.wrapperOffset = utils.offset(this.wrapper);
 
 		this._execEvent('refresh');
