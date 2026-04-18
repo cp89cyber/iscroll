@@ -1,4 +1,4 @@
-/*! iScroll v5.2.0-snapshot ~ (c) 2008-2017 Matteo Spinelli ~ http://cubiq.org/license */
+/*! iScroll v5.2.0-snapshot ~ (c) 2008-2026 Matteo Spinelli ~ http://cubiq.org/license */
 (function (window, document, Math) {
 var rAF = window.requestAnimationFrame	||
 	window.webkitRequestAnimationFrame	||
@@ -2054,6 +2054,12 @@ Indicator.prototype = {
 		this.moved = false;
 		this.lastPointX	= point.pageX;
 		this.lastPointY	= point.pageY;
+		this.scroller.startX = this.scroller.x;
+		this.scroller.startY = this.scroller.y;
+		this.scroller.absStartX = this.scroller.x;
+		this.scroller.absStartY = this.scroller.y;
+		this.scroller.directionX = 0;
+		this.scroller.directionY = 0;
 
 		this.startTime	= utils.getTime();
 
@@ -2301,6 +2307,9 @@ Indicator.prototype = {
 	},
 
 	_pos: function (x, y) {
+		var scrollerX = this.scroller.x,
+			scrollerY = this.scroller.y;
+
 		if ( x < 0 ) {
 			x = 0;
 		} else if ( x > this.maxPosX ) {
@@ -2315,6 +2324,9 @@ Indicator.prototype = {
 
 		x = this.options.listenX ? Math.round(x / this.sizeRatioX) : this.scroller.x;
 		y = this.options.listenY ? Math.round(y / this.sizeRatioY) : this.scroller.y;
+
+		this.scroller.directionX = x > scrollerX ? -1 : x < scrollerX ? 1 : 0;
+		this.scroller.directionY = y > scrollerY ? -1 : y < scrollerY ? 1 : 0;
 
 		this.scroller.scrollTo(x, y);
 	},
