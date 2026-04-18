@@ -5,7 +5,9 @@
 			case 'pointerdown':
 			case 'MSPointerDown':
 			case 'mousedown':
-				this._start(e);
+				if ( !this._start(e) ) {
+					return;
+				}
 				break;
 			case 'touchmove':
 			case 'pointermove':
@@ -36,12 +38,18 @@
 			case 'wheel':
 			case 'DOMMouseScroll':
 			case 'mousewheel':
+				if ( this._isPreventScrollTarget(e.target) ) {
+					return;
+				}
 				this._wheel(e);
 				break;
 			case 'keydown':
 				this._key(e);
 				break;
 			case 'click':
+				if ( this._isPreventScrollTarget(e.target) ) {
+					return;
+				}
 				if ( this.enabled && !e._constructed ) {
 					e.preventDefault();
 					e.stopPropagation();

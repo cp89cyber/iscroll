@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0, minimum-scale=1.0, maximum-scale=1.0">
+
+<title>iScroll demo: nested interactive widgets</title>
+
+<script type="text/javascript" src="../../build/iscroll.js"></script>
+<script type="text/javascript">
+
+var myScroll;
+var mapX = -40;
+var mapY = -30;
+var mapZoom = 1;
+var dragStartX = 0;
+var dragStartY = 0;
+var dragOriginX = 0;
+var dragOriginY = 0;
+var dragging = false;
+var moved = false;
+var suppressClick = false;
+var clickCount = 0;
+var mapShell;
+var mapLayer;
+var mapStatus;
+var mapLog;
+
+function loaded () {
+	mapShell = document.getElementById('mockMap');
+	mapLayer = document.getElementById('mockMapLayer');
+	mapStatus = document.getElementById('mapStatus');
+	mapLog = document.getElementById('mapLog');
+
+	myScroll = new IScroll('#wrapper', {
+		click: true,
+		mouseWheel: true,
+		preventScrollException: {
+			className: /(^|\s)js-map-shell(\s|$)/
+		}
+	});
+
+	bindMockMap();
+	renderMockMap();
+}
+
+function bindMockMap () {
+	mapShell.addEventListener('mousedown', onMouseDown);
+	window.addEventListener('mousemove', onMouseMove);
+	window.addEventListener('mouseup', onMouseUp);
+
+	mapShell.addEventListener('touchstart', onTouchStart, supportsPassive() ? {
+		passive: false
+	} : false);
+	window.addEventListener('touchmove', onTouchMove, supportsPassive() ? {
+		passive: false
+	} : false);
+	window.addEventListener('touchend', onTouchEnd);
+	window.addEventListener('touchcancel', onTouchEnd);
+
+	mapShell.addEventListener('wheel', onWheel, supportsPassive() ? {
+		passive: false
+	} : false);
+	mapShell.addEventListener('click', onMapClick);
+}
+
+function supportsPassive () {
+	var supportsPassiveOption = false;
+
+	try {
+		window.addEventListener('test', null, Object.defineProperty({}, 'passive', {
+			get: function () {
+				supportsPassiveOption = true;
+			}
+		}));
+	} catch (e) {}
+
+	return supportsPassiveOption;
+}
+
+function renderMockMap () {
+	mapLayer.style.transform = 'translate(' + mapX + 'px,' + mapY + 'px) scale(' + mapZoom + ')';
+	mapStatus.innerHTML = 'Map offset: <strong>' + Math.round(mapX) + ', ' + Math.round(mapY) + '</strong> | Zoom: <strong>' + mapZoom.toFixed(2) + '</strong> | Clicks: <strong>' + clickCount + '</strong>';
+}
+
+function setLog (message) {
+	mapLog.innerHTML = message;
+}
+
+function startDrag (x, y) {
+	dragging = true;
+	moved = false;
+	dragStartX = x;
+	dragStartY = y;
+	dragOriginX = mapX;
+	dragOriginY = mapY;
+	if ( mapShell.className.indexOf('is-dragging') == -1 ) {
+		mapShell.className = mapShell.className + ' is-dragging';
+	}
+	setLog('Dragging inside the mock map moves the map only.');
+}
+
+function moveDrag (x, y) {
+	var deltaX;
+	var deltaY;
+
+	if ( !dragging ) {
+		return;
+	}
+
+	deltaX = x - dragStartX;
+	deltaY = y - dragStartY;
+
+	if ( Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2 ) {
+		moved = true;
+	}
+
+	mapX = dragOriginX + deltaX;
+	mapY = dragOriginY + deltaY;
+	renderMockMap();
+}
+
+function endDrag () {
+	if ( !dragging ) {
+		return;
+	}
+
+	dragging = false;
+	mapShell.className = mapShell.className.replace(' is-dragging', '');
+
+	if ( moved ) {
+		suppressClick = true;
+		setLog('Map drag finished. Scroll outside the map to move iScroll.');
+	} else {
+		setLog('Tap or click inside the mock map to verify click passthrough.');
+	}
+}
+
+function onMouseDown (e) {
+	e.preventDefault();
+	startDrag(e.pageX, e.pageY);
+}
+
+function onMouseMove (e) {
+	moveDrag(e.pageX, e.pageY);
+}
+
+function onMouseUp () {
+	endDrag();
+}
+
+function onTouchStart (e) {
+	var touch = e.touches[0];
+
+	if ( !touch ) {
+		return;
+	}
+
+	startDrag(touch.pageX, touch.pageY);
+}
+
+function onTouchMove (e) {
+	var touch = e.touches[0];
+
+	if ( !dragging || !touch ) {
+		return;
+	}
+
+	e.preventDefault();
+	moveDrag(touch.pageX, touch.pageY);
+}
+
+function onTouchEnd () {
+	endDrag();
+}
+
+function onWheel (e) {
+	mapZoom += e.deltaY < 0 ? 0.1 : -0.1;
+	mapZoom = Math.max(0.8, Math.min(2.4, mapZoom));
+	e.preventDefault();
+	renderMockMap();
+	setLog('Mouse wheel reached the map instead of the scroller.');
+}
+
+function onMapClick () {
+	if ( suppressClick ) {
+		suppressClick = false;
+		return;
+	}
+
+	clickCount++;
+	renderMockMap();
+	setLog('Native click/tap fired inside the map shell.');
+}
+
+</script>
+
+<style type="text/css">
+* {
+	-webkit-box-sizing: border-box;
+	-moz-box-sizing: border-box;
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	font: 14px/1.5 "Helvetica Neue", Arial, sans-serif;
+	background: #dadada;
+	overflow: hidden;
+}
+
+#header {
+	position: absolute;
+	z-index: 2;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 52px;
+	padding: 12px 16px;
+	background: #1f3a5f;
+	color: #f4f8fc;
+	font-size: 20px;
+	font-weight: bold;
+}
+
+#wrapper {
+	position: absolute;
+	z-index: 1;
+	top: 52px;
+	bottom: 0;
+	left: 0;
+	width: 100%;
+	overflow: hidden;
+	background: #e8edf3;
+}
+
+#scroller {
+	position: absolute;
+	z-index: 1;
+	width: 100%;
+	padding: 18px;
+	-webkit-transform: translateZ(0);
+	-moz-transform: translateZ(0);
+	-ms-transform: translateZ(0);
+	-o-transform: translateZ(0);
+	transform: translateZ(0);
+}
+
+.card {
+	margin: 0 0 16px;
+	padding: 16px;
+	border-radius: 14px;
+	background: #fff;
+	box-shadow: 0 10px 24px rgba(31, 58, 95, 0.12);
+}
+
+.card h2,
+.card h3,
+.card p {
+	margin: 0 0 10px;
+}
+
+.map-shell {
+	position: relative;
+	height: 240px;
+	overflow: hidden;
+	border-radius: 16px;
+	border: 2px solid #275f9a;
+	background: linear-gradient(180deg, #93c9f4 0%, #cde7bb 100%);
+	touch-action: none;
+}
+
+.map-shell.is-dragging {
+	border-color: #d95f39;
+	box-shadow: inset 0 0 0 2px rgba(217, 95, 57, 0.25);
+}
+
+.map-layer {
+	position: absolute;
+	top: -80px;
+	left: -80px;
+	right: -80px;
+	bottom: -80px;
+	background-image:
+		linear-gradient(rgba(255, 255, 255, 0.35) 2px, transparent 2px),
+		linear-gradient(90deg, rgba(255, 255, 255, 0.35) 2px, transparent 2px),
+		radial-gradient(circle at 22% 28%, #ff9f43 0, #ff9f43 8px, transparent 9px),
+		radial-gradient(circle at 58% 44%, #e74c3c 0, #e74c3c 10px, transparent 11px),
+		radial-gradient(circle at 72% 65%, #2ecc71 0, #2ecc71 9px, transparent 10px),
+		radial-gradient(circle at 38% 72%, #8e44ad 0, #8e44ad 7px, transparent 8px);
+	background-size: 60px 60px, 60px 60px, auto, auto, auto, auto;
+	transform-origin: 0 0;
+}
+
+.map-overlay,
+.map-status,
+.map-log {
+	position: absolute;
+	left: 12px;
+	right: 12px;
+	padding: 8px 10px;
+	border-radius: 10px;
+	background: rgba(15, 32, 52, 0.72);
+	color: #f7fbff;
+}
+
+.map-overlay {
+	top: 12px;
+	font-size: 13px;
+}
+
+.map-status {
+	bottom: 52px;
+	font-size: 12px;
+}
+
+.map-log {
+	bottom: 12px;
+	font-size: 12px;
+}
+
+.steps {
+	padding-left: 18px;
+	margin: 0;
+}
+
+.steps li {
+	margin: 0 0 8px;
+}
+
+.row {
+	margin-bottom: 12px;
+	padding: 12px 14px;
+	border-radius: 12px;
+	background: #fff;
+	box-shadow: 0 6px 16px rgba(31, 58, 95, 0.08);
+}
+
+.row strong {
+	color: #1f3a5f;
+}
+</style>
+</head>
+<body onload="loaded()">
+<div id="header">iScroll nested interactive demo</div>
+
+<div id="wrapper">
+	<div id="scroller">
+		<div class="card">
+			<h2>Embedded interactive region</h2>
+			<p>This demo uses <code>preventScrollException</code> so the mock map below keeps its own drag, click and wheel behavior while the surrounding content still uses iScroll.</p>
+			<ol class="steps">
+				<li>Drag inside the map to move the colored markers.</li>
+				<li>Scroll or drag outside the map to move the page.</li>
+				<li>Use the mouse wheel over the map to change the zoom level.</li>
+				<li>Tap or click inside the map to increment the click counter.</li>
+			</ol>
+		</div>
+
+		<div class="card js-map-shell map-shell" id="mockMap">
+			<div class="map-layer" id="mockMapLayer"></div>
+			<div class="map-overlay">Mock map widget. iScroll should not steal gestures in this region.</div>
+			<div class="map-status" id="mapStatus"></div>
+			<div class="map-log" id="mapLog">Ready. Start inside the map or scroll the page around it.</div>
+		</div>
+
+		<div class="row"><strong>Row 1.</strong> Scroll here to confirm iScroll still handles the surrounding content.</div>
+		<div class="row"><strong>Row 2.</strong> The wrapper remains scrollable outside of the map shell.</div>
+		<div class="row"><strong>Row 3.</strong> This mimics an embedded Google Map inside an iScroll view.</div>
+		<div class="row"><strong>Row 4.</strong> The exception matches ancestors, so deep child elements inside the widget still work.</div>
+		<div class="row"><strong>Row 5.</strong> Click passthrough is most visible with <code>click: true</code> enabled.</div>
+		<div class="row"><strong>Row 6.</strong> Wheel passthrough matters when the scroller also has <code>mouseWheel: true</code>.</div>
+		<div class="row"><strong>Row 7.</strong> Touch fallback avoids stale pointer-event <code>touch-action</code> blocking on nested widgets.</div>
+		<div class="row"><strong>Row 8.</strong> Drag this section and the list should move as normal.</div>
+		<div class="row"><strong>Row 9.</strong> The map shell uses a user-owned <code>js-map-shell</code> class.</div>
+		<div class="row"><strong>Row 10.</strong> That is the class matched by <code>preventScrollException</code>.</div>
+		<div class="row"><strong>Row 11.</strong> The demo stays self-contained and does not depend on third-party APIs.</div>
+		<div class="row"><strong>Row 12.</strong> Reaching the bottom confirms the scroller boundaries still behave correctly.</div>
+	</div>
+</div>
+
+</body>
+</html>
